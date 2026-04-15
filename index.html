@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>裤佬全网盘搜</title>
+    <title>裤佬全网盘搜 · 分类筛选版</title>
     <style>
         * {
             margin: 0;
@@ -26,6 +26,8 @@
             --input-bg: rgba(255, 255, 255, 0.4);
             --tag-bg: #eef2ff;
             --password-tag: #fef3c7;
+            --filter-active: #1e3c72;
+            --filter-inactive: #e2e8f0;
         }
 
         body.dark {
@@ -43,6 +45,8 @@
             --input-bg: rgba(30, 41, 59, 0.6);
             --tag-bg: #334155;
             --password-tag: #451a03;
+            --filter-active: #60a5fa;
+            --filter-inactive: #334155;
         }
 
         body {
@@ -120,7 +124,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1280px;
             margin: 0 auto;
             padding: 20px;
             padding-top: 80px;
@@ -130,7 +134,7 @@
             background: var(--card-bg);
             border-radius: 32px;
             padding: 32px 40px;
-            margin-bottom: 32px;
+            margin-bottom: 24px;
             border: 1px solid var(--border-color);
             text-align: center;
         }
@@ -218,12 +222,72 @@
 
         .stats {
             margin-top: 20px;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: var(--text-secondary);
             background: var(--result-bg);
             padding: 8px 20px;
             border-radius: 40px;
             display: inline-block;
+        }
+
+        /* 筛选栏样式 */
+        .filter-bar {
+            margin: 20px 0 28px 0;
+            background: var(--card-bg);
+            border-radius: 60px;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        .filter-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            padding-left: 8px;
+        }
+
+        .filter-chip {
+            background: var(--filter-inactive);
+            padding: 8px 20px;
+            border-radius: 40px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.2s;
+            color: var(--text-primary);
+            border: none;
+        }
+
+        .filter-chip.active {
+            background: var(--filter-active);
+            color: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        .filter-chip:hover:not(.active) {
+            background: var(--border-color);
+            transform: translateY(-1px);
+        }
+
+        .clear-filter {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 6px 16px;
+            border-radius: 40px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .clear-filter:hover {
+            background: var(--result-bg);
+            color: var(--accent-color);
         }
 
         .results-grid {
@@ -400,6 +464,8 @@
             .results-grid { grid-template-columns: 1fr; gap: 16px; }
             .theme-toggle { top: 70px; right: 15px; width: 40px; height: 40px; font-size: 20px; }
             .avatar { width: 65px; height: 65px; }
+            .filter-bar { border-radius: 30px; padding: 8px 12px; gap: 8px; }
+            .filter-chip { padding: 6px 14px; font-size: 0.75rem; }
         }
     </style>
 </head>
@@ -426,18 +492,25 @@
                      class="avatar"
                      onerror="this.onerror=null; this.src='https://via.placeholder.com/80x80?text=Avatar'">
             </div>
-            <div class="sub">🚀 代理加速 · 智能缓存 · 瞬时响应</div>
+            <div class="sub">🚀 代理加速 · 智能缓存 · 按盘分类筛选</div>
             <div class="search-box">
                 <input type="text" id="searchInput" class="search-input" placeholder="输入电影、剧集、短剧、书籍、音乐、软件、资料">
                 <button id="searchBtn" class="search-btn">🔍 极速搜索</button>
             </div>
-            <div id="statsArea" class="stats">✨ 代理加速已启用 · 点击按钮开始搜索</div>
+            <div id="statsArea" class="stats">✨ 代理加速已启用 · 支持网盘分类筛选</div>
+        </div>
+
+        <!-- 筛选栏：动态显示网盘类型 -->
+        <div id="filterBar" class="filter-bar" style="display: none;">
+            <span class="filter-label">📂 按网盘筛选：</span>
+            <div id="filterChipsContainer" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+            <button id="clearFilterBtn" class="clear-filter">✖️ 清除筛选</button>
         </div>
 
         <div id="resultsContainer" class="results-grid">
             <div class="empty-state">
                 🚀 代理加速版搜索站已就绪<br>
-                ✅ 跨域代理已启用 · 请求速度提升<br>
+                ✅ 支持网盘分类筛选（百度/阿里/夸克/迅雷）<br>
                 💡 试试搜索「死神来了」「短剧」「蜜语纪」等关键词
             </div>
         </div>
@@ -466,24 +539,125 @@
                 return ORIGIN_API + encodedKw;
             }
 
-            const cache = new Map();
+            const cache = new Map();  // 存储 { allResults, total, diskTypes }
+            let currentFilterType = 'all';      // 'all', '百度网盘', '阿里云盘', '夸克网盘', '迅雷网盘'
+            let currentRawResults = [];           // 当前搜索结果原始数组
+            let currentKeyword = '';
 
-            async function fetchWithTimeout(url, timeout = 8000, retries = 1) {
-                for (let i = 0; i <= retries; i++) {
-                    try {
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), timeout);
-                        const response = await fetch(url, { 
-                            signal: controller.signal, 
-                            headers: { 'Accept': 'application/json' }
-                        });
-                        clearTimeout(timeoutId);
-                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                        return await response.json();
-                    } catch (err) {
-                        if (i === retries) throw err;
-                        await new Promise(r => setTimeout(r, 500));
+            // 网盘类型识别（增强）
+            function getDiskType(url) {
+                if (!url) return '🔗 网盘链接';
+                if (url.includes('pan.baidu.com')) return '📀 百度网盘';
+                if (url.includes('aliyundrive.com')) return '☁️ 阿里云盘';
+                if (url.includes('quark.cn')) return '⚛️ 夸克网盘';
+                if (url.includes('xunlei.com') || url.includes('pan.xunlei.com')) return '⚡ 迅雷网盘';
+                return '🔗 网盘链接';
+            }
+
+            // 提取纯类型名称（用于筛选匹配）
+            function getPureDiskType(url) {
+                const type = getDiskType(url);
+                if (type === '📀 百度网盘') return '百度网盘';
+                if (type === '☁️ 阿里云盘') return '阿里云盘';
+                if (type === '⚛️ 夸克网盘') return '夸克网盘';
+                if (type === '⚡ 迅雷网盘') return '迅雷网盘';
+                return '其他';
+            }
+
+            // 从结果中提取所有出现的网盘类型（去重）
+            function extractDiskTypesFromResults(results) {
+                const typesSet = new Set();
+                for (const item of results) {
+                    const pure = getPureDiskType(item.url);
+                    if (pure !== '其他') typesSet.add(pure);
+                }
+                const sorted = ['百度网盘', '阿里云盘', '夸克网盘', '迅雷网盘'].filter(t => typesSet.has(t));
+                return sorted;
+            }
+
+            // 渲染筛选栏UI
+            function renderFilterBar(typesArray) {
+                const filterBar = document.getElementById('filterBar');
+                const chipsContainer = document.getElementById('filterChipsContainer');
+                if (!chipsContainer) return;
+                if (!typesArray || typesArray.length === 0) {
+                    filterBar.style.display = 'none';
+                    return;
+                }
+                filterBar.style.display = 'flex';
+                chipsContainer.innerHTML = '';
+                // 添加 “全部” 选项
+                const allChip = document.createElement('button');
+                allChip.className = `filter-chip ${currentFilterType === 'all' ? 'active' : ''}`;
+                allChip.textContent = `全部 (${currentRawResults.length})`;
+                allChip.addEventListener('click', () => {
+                    currentFilterType = 'all';
+                    applyFilterAndRender();
+                    updateFilterActiveUI();
+                });
+                chipsContainer.appendChild(allChip);
+                
+                typesArray.forEach(type => {
+                    const count = currentRawResults.filter(item => getPureDiskType(item.url) === type).length;
+                    const chip = document.createElement('button');
+                    chip.className = `filter-chip ${currentFilterType === type ? 'active' : ''}`;
+                    chip.textContent = `${type} (${count})`;
+                    chip.addEventListener('click', () => {
+                        currentFilterType = type;
+                        applyFilterAndRender();
+                        updateFilterActiveUI();
+                    });
+                    chipsContainer.appendChild(chip);
+                });
+            }
+
+            function updateFilterActiveUI() {
+                const chips = document.querySelectorAll('.filter-chip');
+                chips.forEach(chip => {
+                    const text = chip.textContent.split(' ')[0];
+                    if (currentFilterType === 'all' && text === '全部') {
+                        chip.classList.add('active');
+                    } else if (currentFilterType !== 'all' && text === currentFilterType) {
+                        chip.classList.add('active');
+                    } else {
+                        chip.classList.remove('active');
                     }
+                });
+            }
+
+            // 应用筛选，重新渲染结果
+            function applyFilterAndRender() {
+                if (!currentRawResults.length) {
+                    renderEmptyOrError('empty', currentKeyword);
+                    return;
+                }
+                let filtered = [...currentRawResults];
+                if (currentFilterType !== 'all') {
+                    filtered = filtered.filter(item => getPureDiskType(item.url) === currentFilterType);
+                }
+                if (filtered.length === 0) {
+                    resultsContainer.innerHTML = `<div class="empty-state">😞 当前筛选“${currentFilterType}”下暂无资源<br>💡 试试其他网盘分类或清除筛选</div>`;
+                    const totalOrigin = currentRawResults.length;
+                    statsArea.innerText = `🔍 找到 ${totalOrigin} 条资源 · 当前筛选显示 0 条 (${currentFilterType})`;
+                    return;
+                }
+                renderResultsDirect(filtered);
+                const totalOrigin = currentRawResults.length;
+                statsArea.innerHTML = `✅ 共 ${totalOrigin} 条资源 · 当前展示 ${filtered.length} 条 (筛选: ${currentFilterType === 'all' ? '全部网盘' : currentFilterType}) · 代理加速已缓存`;
+            }
+
+            function renderResultsDirect(resultsArray) {
+                resultsContainer.innerHTML = '';
+                for (let i = 0; i < resultsArray.length; i++) {
+                    resultsContainer.insertAdjacentHTML('beforeend', renderCard(resultsArray[i]));
+                }
+                if (resultsArray.length > 30) {
+                    const tip = document.createElement('div');
+                    tip.className = 'stats';
+                    tip.style.marginTop = '16px';
+                    tip.style.textAlign = 'center';
+                    tip.innerText = `✨ 共 ${resultsArray.length} 条结果，已全部展示`;
+                    resultsContainer.appendChild(tip);
                 }
             }
 
@@ -508,14 +682,6 @@
                 });
             }
 
-            function getDiskType(url) {
-                if (url.includes('pan.baidu.com')) return '📀 百度网盘';
-                if (url.includes('aliyundrive.com')) return '☁️ 阿里云盘';
-                if (url.includes('quark.cn')) return '⚛️ 夸克网盘';
-                if (url.includes('xunlei.com')) return '⚡ 迅雷网盘';
-                return '🔗 网盘链接';
-            }
-
             function renderCard(item) {
                 const title = item.note || '无标题资源';
                 const url = item.url || '#';
@@ -524,6 +690,7 @@
                 const datetime = item.datetime ? formatDate(item.datetime) : '时间未知';
                 const noteDetail = item.note || '';
                 const diskType = getDiskType(url);
+                const pureType = getPureDiskType(url);
                 
                 return `
                     <div class="card">
@@ -548,30 +715,41 @@
 
             function showLoading() {
                 resultsContainer.innerHTML = `<div class="loading"><div class="spinner"></div><div style="margin-top:12px;">🚀 代理加速请求中...</div></div>`;
+                document.getElementById('filterBar').style.display = 'none';
             }
 
             function showError(msg) {
                 resultsContainer.innerHTML = `<div class="error-state">⚠️ 请求失败: ${escapeHtml(msg)}<br><br>💡 提示: 代理服务器可能繁忙，请重试或检查网络</div>`;
                 statsArea.innerText = `❌ 请求失败: ${msg}`;
+                document.getElementById('filterBar').style.display = 'none';
+                currentRawResults = [];
+                currentFilterType = 'all';
             }
 
-            function showEmpty(keyword) {
-                resultsContainer.innerHTML = `<div class="empty-state">😞 未找到关于 “${escapeHtml(keyword)}” 的资源<br>试试其他关键词 (例如: 蜜语纪、短剧、死神来了)</div>`;
-                statsArea.innerText = `🔍 没有找到与 “${keyword}” 相关的结果`;
-            }
-
-            function renderResults(allResults, total, kw) {
-                resultsContainer.innerHTML = '';
-                for (let i = 0; i < allResults.length; i++) {
-                    resultsContainer.insertAdjacentHTML('beforeend', renderCard(allResults[i]));
+            function renderEmptyOrError(state, kw) {
+                if (state === 'empty') {
+                    resultsContainer.innerHTML = `<div class="empty-state">😞 未找到关于 “${escapeHtml(kw)}” 的资源<br>试试其他关键词 (例如: 蜜语纪、短剧、死神来了)</div>`;
+                    statsArea.innerText = `🔍 没有找到与 “${kw}” 相关的结果`;
                 }
-                if (allResults.length > 30) {
-                    const tip = document.createElement('div');
-                    tip.className = 'stats';
-                    tip.style.marginTop = '16px';
-                    tip.style.textAlign = 'center';
-                    tip.innerText = `✨ 共 ${allResults.length} 条结果，已全部展示`;
-                    resultsContainer.appendChild(tip);
+                document.getElementById('filterBar').style.display = 'none';
+            }
+
+            async function fetchWithTimeout(url, timeout = 8000, retries = 1) {
+                for (let i = 0; i <= retries; i++) {
+                    try {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), timeout);
+                        const response = await fetch(url, { 
+                            signal: controller.signal, 
+                            headers: { 'Accept': 'application/json' }
+                        });
+                        clearTimeout(timeoutId);
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        return await response.json();
+                    } catch (err) {
+                        if (i === retries) throw err;
+                        await new Promise(r => setTimeout(r, 500));
+                    }
                 }
             }
 
@@ -579,14 +757,20 @@
                 if (!keyword || keyword.trim() === '') {
                     statsArea.innerText = '⚠️ 请输入搜索关键词';
                     resultsContainer.innerHTML = `<div class="empty-state">📌 请输入电影/剧集/资源名称</div>`;
+                    document.getElementById('filterBar').style.display = 'none';
                     return;
                 }
                 const kw = keyword.trim();
+                currentKeyword = kw;
+                currentFilterType = 'all';
                 
                 if (cache.has(kw)) {
                     const cached = cache.get(kw);
-                    statsArea.innerHTML = `⚡ 缓存命中 · 瞬间展示 ${cached.total} 条结果 · 代理加速版`;
-                    renderResults(cached.allResults, cached.total, kw);
+                    currentRawResults = cached.allResults;
+                    const types = extractDiskTypesFromResults(currentRawResults);
+                    renderFilterBar(types);
+                    applyFilterAndRender();
+                    statsArea.innerHTML = `⚡ 缓存命中 · 共 ${cached.total} 条资源 · 支持网盘筛选`;
                     return;
                 }
                 
@@ -610,19 +794,28 @@
                     }
                     
                     if (allResults.length === 0) {
-                        showEmpty(kw);
+                        renderEmptyOrError('empty', kw);
+                        currentRawResults = [];
+                        document.getElementById('filterBar').style.display = 'none';
                         return;
                     }
                     
                     const total = data.data.total || allResults.length;
+                    currentRawResults = allResults;
+                    
+                    // 存入缓存
                     cache.set(kw, { allResults, total });
                     if (cache.size > 50) {
                         const firstKey = cache.keys().next().value;
                         cache.delete(firstKey);
                     }
                     
-                    statsArea.innerHTML = `✅ 找到 ${total} 条资源 · 代理加速 (已缓存，下次秒开)`;
-                    renderResults(allResults, total, kw);
+                    // 提取网盘类型并渲染筛选栏
+                    const diskTypes = extractDiskTypesFromResults(allResults);
+                    renderFilterBar(diskTypes);
+                    // 默认显示全部
+                    applyFilterAndRender();
+                    statsArea.innerHTML = `✅ 找到 ${total} 条资源 · 支持 ${diskTypes.length} 种网盘筛选 (已缓存)`;
                     
                 } catch (err) {
                     console.error('搜索出错:', err);
@@ -634,6 +827,7 @@
                 }
             }
 
+            // 预加载热门词（静默）
             function preloadHotKeywords() {
                 const hotWords = ['短剧', '电影', '死神来了', '电视剧', '4K'];
                 if ('requestIdleCallback' in window) {
@@ -655,21 +849,31 @@
                 }
             }
 
+            // 绑定UI元素
             const searchInput = document.getElementById('searchInput');
             const searchBtn = document.getElementById('searchBtn');
             const resultsContainer = document.getElementById('resultsContainer');
             const statsArea = document.getElementById('statsArea');
-
-            searchBtn.addEventListener('click', () => {
-                searchResources(searchInput.value);
-            });
+            const clearFilterBtn = document.getElementById('clearFilterBtn');
+            
+            searchBtn.addEventListener('click', () => searchResources(searchInput.value));
             searchInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    searchResources(searchInput.value);
-                }
+                if (e.key === 'Enter') searchResources(searchInput.value);
             });
+            
+            if (clearFilterBtn) {
+                clearFilterBtn.addEventListener('click', () => {
+                    if (currentRawResults.length) {
+                        currentFilterType = 'all';
+                        applyFilterAndRender();
+                        const types = extractDiskTypesFromResults(currentRawResults);
+                        renderFilterBar(types);
+                        updateFilterActiveUI();
+                    }
+                });
+            }
 
+            // 音乐与主题逻辑
             const music = document.getElementById('bgMusic');
             const musicToggle = document.getElementById('musicToggle');
             const musicHint = document.getElementById('musicHint');
@@ -683,7 +887,6 @@
                 });
             }
             attemptAutoPlay();
-
             const enableMusicOnFirstInteraction = () => {
                 if (music.paused) {
                     music.play().then(() => {
@@ -694,12 +897,10 @@
                 document.removeEventListener('click', enableMusicOnFirstInteraction);
                 document.removeEventListener('touchstart', enableMusicOnFirstInteraction);
             };
-
             if (music.paused) {
                 document.addEventListener('click', enableMusicOnFirstInteraction, { once: true });
                 document.addEventListener('touchstart', enableMusicOnFirstInteraction, { once: true });
             }
-
             musicToggle.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (music.paused) {
@@ -719,20 +920,15 @@
                 document.body.classList.add('dark');
                 themeToggle.textContent = '☀️';
             }
-
             themeToggle.addEventListener('click', () => {
                 document.body.classList.toggle('dark');
                 const isDark = document.body.classList.contains('dark');
                 localStorage.setItem('theme', isDark ? 'dark' : 'light');
                 themeToggle.textContent = isDark ? '☀️' : '🌙';
             });
-
+            
             window.addEventListener('load', () => {
                 preloadHotKeywords();
-                if (localStorage.getItem('theme') === 'dark') {
-                    document.body.classList.add('dark');
-                    themeToggle.textContent = '☀️';
-                }
             });
         })();
     </script>
